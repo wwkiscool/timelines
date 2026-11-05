@@ -1,0 +1,280 @@
+"use client";
+
+import { useEffect, useRef, type RefObject } from "react";
+
+type Props = { running: boolean; speed: number; flat: boolean; resetKey: number; timeRef: RefObject<number> };
+type Point = { x: number; y: number; z: number };
+type CameraPoint = { x: number; y: number; depth: number };
+const DEFAULT_CAMERA = { yaw: 0.74, pitch: 0.4 };
+const NEAR = 420;
+const TAU = Math.PI * 2;
+
+export default function TimelineScene({ running, speed, flat, resetKey }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const options = useRef({ running, speed, flat });
+  const camera = useRef({ ...DEFAULT_CAMERA });
+  const requestDraw = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    options.current = { running, speed, flat };
+    requestDraw.current();
+  }, [running, speed, flat]);
+
+  useEffect(() => {
+    camera.current = { ...DEFAULT_CAMERA };
+    requestDraw.current();
+  }, [resetKey]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let width = 1, height = 1, raf = 0, phase = 0, lastFrame = 0;
+    let pointerId: number | null = null, lastX = 0, lastY = 0;
+
+    const transform = ({ x, y, z }: Point): CameraPoint => {
+      const { yaw, pitch } = camera.current;
+      const rx = x * Math.cos(yaw) + z * Math.sin(yaw);
+      const rz = -x * Math.sin(yaw) + z * Math.cos(yaw);
+      return {
+        x: rx,
+        y: y * Math.cos(pitch) + rz * Math.sin(pitch),
+        depth: -y * Math.sin(pitch) + rz * Math.cos(pitch) + 1750,
+      };
+    };
+    const projectCamera = (point: CameraPoint) => {
+      const scale = 1500 / point.depth;
+      return { x: width * (0.5 + point.x * scale / 2400), y: height * (0.55 - point.y * scale / 950), scale };
+    };
+    const project = (point: Point) => options.current.flat
+      ? { x: width * (0.5 + point.z / 2600), y: height * (0.55 - point.y / 650 + point.x / 9000), scale: 1 }
+      : projectCamera(transform(point));
+
+    // Clip in camera space before projection, including wide ground-plane lines.
+    const segment = (from: Point, to: Point) => {
+      if (options.current.flat) return [project(from), project(to)] as const;
+      let a = transform(from), b = transform(to);
+      if (a.depth < NEAR && b.depth < NEAR) return null;
+      if (a.depth < NEAR || b.depth < NEAR) {
+        const ratio = (NEAR - a.depth) / (b.depth - a.depth);
+        const clipped = { x: a.x + (b.x - a.x) * ratio, y: a.y + (b.y - a.y) * ratio, depth: NEAR };
+        if (a.depth < NEAR) a = clipped;
+        else b = clipped;
+      }
+      return [projectCamera(a), projectCamera(b)] as const;
+    };
+    const line = (from: Point, to: Point, color: string | CanvasGradient, weight = 1) => {
+      const points = segment(from, to);
+      if (!points) return;
+      ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y); ctx.lineTo(points[1].x, points[1].y);
+      ctx.strokeStyle = color; ctx.lineWidth = weight; ctx.stroke();
+    };
+    const halo = (x: number, y: number, radius: number, color: string, alpha: number) => {
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, radius);
+      glow.addColorStop(0, `rgba(${color},${alpha})`);
+      glow.addColorStop(0.24, `rgba(${color},${alpha * 0.3})`);
+      glow.addColorStop(1, `rgba(${color},0)`);
+      ctx.fillStyle = glow; ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    };
+    const queueDraw = () => {
+      if (!raf && !document.hidden) raf = requestAnimationFrame(draw);
+    };
+    const draw = (stamp: number) => {
+      raf = 0;
+      const moving = options.current.running && !reducedMotion.matches;
+      const delta = lastFrame ? Math.min(stamp - lastFrame, 40) : 16;
+      lastFrame = stamp;
+      if (moving) phase += delta * 0.09 * options.current.speed;
+      ctx.clearRect(0, 0, width, height);
+      const center = project({ x: 0, y: 0, z: 0 });
+      const compact = width < 640;
+
+      // A broad, low-intensity glow leaves the black field and fine marks legible.
+      ctx.save();
+      ctx.translate(center.x, center.y); ctx.scale(1, 0.36);
+      halo(0, 0, Math.min(width * 0.42, 570), "159,206,72", 0.17);
+      ctx.restore();
+
+      if (!options.current.flat) {
+        for (let x = -1800; x <= 1800; x += 180) {
+          line({ x, y: -65, z: -1300 }, { x, y: -65, z: 7600 }, "rgba(151,183,167,0.085)", 0.7);
+        }
+        for (let z = -1200; z <= 7000; z += 200) {
+          const fade = Math.max(0, 1 - Math.abs(z) / 7600);
+          line({ x: -1800, y: -65, z }, { x: 1800, y: -65, z }, `rgba(151,183,167,${fade * 0.065})`, 0.7);
+        }
+      }
+
+      // Sparse dust catches the light without becoming a distracting star field.
+      for (let i = 0; i < (compact ? 24 : 52); i++) {
+        const x = ((i * 173.37 + 29) % 997) / 997 * width;
+        const y = ((i * 97.61 + 91) % 487) / 487 * height;
+        ctx.fillStyle = `rgba(200,216,184,${0.08 + (Math.sin(i * 3 + phase * 0.002) + 1) * 0.055})`;
+        ctx.fillRect(x, y, i % 7 === 0 ? 1.6 : 0.85, i % 7 === 0 ? 1.6 : 0.85);
+      }
+
+      // Orbital scale around the origin makes the fixed present tangible in 3D.
+      if (!options.current.flat) {
+        for (const radius of [365, 470]) {
+          for (let i = 0; i < 96; i++) {
+            const angle = i / 96 * TAU;
+            const next = (i + 1) / 96 * TAU;
+            const brightness = 0.11 + (Math.sin(angle - 0.8) + 1) * (radius === 365 ? 0.17 : 0.045);
+            line(
+              { x: Math.cos(angle) * radius, y: -12, z: Math.sin(angle) * radius },
+              { x: Math.cos(next) * radius, y: -12, z: Math.sin(next) * radius },
+              `rgba(208,244,151,${brightness})`, radius === 365 ? 1 : 0.6,
+            );
+            if (radius === 470 && i % 3 === 0) {
+              const outer = radius + (i % 12 === 0 ? 25 : 10);
+              line(
+                { x: Math.cos(angle) * radius, y: -12, z: Math.sin(angle) * radius },
+                { x: Math.cos(angle) * outer, y: -12, z: Math.sin(angle) * outer },
+                "rgba(213,255,112,0.26)", 0.8,
+              );
+            }
+          }
+        }
+      }
+
+      const start = { x: 0, y: 0, z: -1450 };
+      const end = { x: 0, y: 0, z: 10000 };
+      const beam = ctx.createLinearGradient(0, height * 0.94, width, height * 0.04);
+      beam.addColorStop(0, "rgba(179,240,68,0)");
+      beam.addColorStop(0.17, "rgba(202,255,111,0.52)");
+      beam.addColorStop(0.49, "rgba(241,255,216,1)");
+      beam.addColorStop(0.74, "rgba(213,255,112,0.8)");
+      beam.addColorStop(1, "rgba(172,224,96,0)");
+      for (const [weight, opacity] of [[42, 0.035], [22, 0.065], [9, 0.14], [3, 0.65], [1.2, 1]] as const) {
+        ctx.globalAlpha = opacity;
+        line(start, end, beam, weight);
+      }
+      ctx.globalAlpha = 1;
+      for (const x of [-38, 38]) {
+        line({ x, y: -5, z: -1450 }, { x, y: -5, z: 7600 }, "rgba(194,232,121,0.16)", 0.7);
+      }
+
+      const step = 70;
+      const offset = phase % step;
+      const counter = Math.floor(phase / step);
+      let lastLabelX = -200;
+      for (let i = -21; i < 91; i++) {
+        const z = i * step - offset;
+        const world = { x: 0, y: 0, z };
+        if (!options.current.flat && transform(world).depth < NEAR) continue;
+        const point = project(world);
+        if (point.x < -30 || point.x > width + 30 || point.y < 0 || point.y > height + 20) continue;
+        const major = ((i + counter) % 5 + 5) % 5 === 0;
+        const fade = Math.max(0, 1 - Math.abs(z) / 6700);
+        const tickHeight = Math.max(major ? 10 : 4, Math.min(major ? 30 : 12, point.scale * (major ? 23 : 8)));
+        ctx.beginPath(); ctx.moveTo(point.x, point.y - 2); ctx.lineTo(point.x, point.y - tickHeight);
+        ctx.strokeStyle = `rgba(219,246,190,${fade * (major ? 0.78 : 0.32)})`;
+        ctx.lineWidth = major ? 1 : 0.7; ctx.stroke();
+        if (major && point.x > 32 && point.x < width - 32 && point.x - lastLabelX > (compact ? 65 : 92) && Math.abs(point.x - center.x) > (compact ? 47 : 76) && z < 2400) {
+          ctx.font = `${compact ? 8 : 10}px Consolas, monospace`;
+          ctx.textAlign = "center";
+          ctx.fillStyle = `rgba(174,195,165,${fade * 0.64})`;
+          const milliseconds = Math.round(z / 350) * 1000;
+          ctx.fillText(`${milliseconds > 0 ? "+" : ""}${milliseconds} ms`, point.x, point.y + 21);
+          lastLabelX = point.x;
+        }
+      }
+
+      // A few streaks travel on the rails, with fixed work per frame.
+      for (let i = 0; i < (compact ? 6 : 12); i++) {
+        const z = ((i * 619 - phase * 2.1) % 6200 + 6200) % 6200 - 1350;
+        const x = (i % 3 - 1) * 39;
+        line({ x, y: 0, z }, { x, y: 0, z: z + 65 + i * 4 }, `rgba(232,255,191,${0.2 + i % 3 * 0.1})`, i % 4 === 0 ? 1.6 : 0.8);
+      }
+
+      const breathing = moving ? 1 + Math.sin(phase * 0.008) * 0.08 : 1;
+      const radius = Math.min(compact ? 100 : 145, width * 0.24);
+      halo(center.x, center.y, radius * breathing, "208,255,119", 0.43);
+      halo(center.x, center.y, 28, "246,255,223", 0.78);
+      ctx.save();
+      ctx.translate(center.x, center.y); ctx.scale(1, 0.07);
+      halo(0, 0, compact ? 98 : 182, "225,255,166", 0.65);
+      ctx.restore();
+      ctx.beginPath(); ctx.arc(center.x, center.y, 3.2, 0, TAU);
+      ctx.fillStyle = "#fcfff4"; ctx.shadowColor = "#d5ff70"; ctx.shadowBlur = 18; ctx.fill(); ctx.shadowBlur = 0;
+
+      const labelTop = center.y - (compact ? 58 : 76);
+      const marker = ctx.createLinearGradient(0, labelTop + 12, 0, center.y);
+      marker.addColorStop(0, "rgba(213,255,112,0.7)"); marker.addColorStop(1, "rgba(213,255,112,0.05)");
+      ctx.strokeStyle = marker; ctx.lineWidth = 0.8; ctx.beginPath();
+      ctx.moveTo(center.x, labelTop + 14); ctx.lineTo(center.x, center.y - 12); ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.font = `${compact ? 9 : 10}px Consolas, monospace`;
+      ctx.fillStyle = "#d5ff70";
+      ctx.fillText(options.current.running ? "N O W / 此 刻" : "P A U S E D / 暂 停", center.x, labelTop);
+
+      if (moving) queueDraw();
+      else lastFrame = 0;
+    };
+
+    const resize = () => {
+      const box = canvas.getBoundingClientRect();
+      width = Math.max(1, box.width); height = Math.max(1, box.height);
+      const dpr = Math.min(window.devicePixelRatio || 1, width < 640 ? 1.5 : 1.75);
+      canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      queueDraw();
+    };
+    const releasePointer = () => {
+      const active = pointerId;
+      pointerId = null;
+      if (active !== null && canvas.hasPointerCapture(active)) canvas.releasePointerCapture(active);
+      canvas.style.cursor = options.current.flat ? "default" : "grab";
+    };
+    const down = (event: PointerEvent) => {
+      if (options.current.flat || !event.isPrimary || event.button !== 0) return;
+      pointerId = event.pointerId; lastX = event.clientX; lastY = event.clientY;
+      canvas.setPointerCapture(event.pointerId); canvas.style.cursor = "grabbing";
+    };
+    const move = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return;
+      if (options.current.flat) { releasePointer(); return; }
+      camera.current.yaw = Math.max(0.4, Math.min(1.02, camera.current.yaw + (event.clientX - lastX) * 0.0015));
+      camera.current.pitch = Math.max(0.2, Math.min(0.58, camera.current.pitch + (event.clientY - lastY) * 0.0015));
+      lastX = event.clientX; lastY = event.clientY;
+      queueDraw();
+    };
+    const up = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) releasePointer();
+    };
+    const refresh = () => {
+      lastFrame = 0;
+      if (options.current.flat) releasePointer();
+      canvas.style.cursor = pointerId !== null ? "grabbing" : options.current.flat ? "default" : "grab";
+      queueDraw();
+    };
+    const visibility = () => {
+      cancelAnimationFrame(raf); raf = 0; lastFrame = 0;
+      if (document.hidden) releasePointer();
+      else queueDraw();
+    };
+    requestDraw.current = refresh;
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    canvas.addEventListener("pointerdown", down); canvas.addEventListener("pointermove", move);
+    canvas.addEventListener("pointerup", up); canvas.addEventListener("pointercancel", up);
+    canvas.addEventListener("lostpointercapture", up);
+    reducedMotion.addEventListener("change", refresh);
+    document.addEventListener("visibilitychange", visibility);
+    resize();
+
+    return () => {
+      requestDraw.current = () => {};
+      cancelAnimationFrame(raf); observer.disconnect(); releasePointer();
+      reducedMotion.removeEventListener("change", refresh);
+      document.removeEventListener("visibilitychange", visibility);
+      canvas.removeEventListener("pointerdown", down); canvas.removeEventListener("pointermove", move);
+      canvas.removeEventListener("pointerup", up); canvas.removeEventListener("pointercancel", up);
+      canvas.removeEventListener("lostpointercapture", up);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="timeline-canvas" aria-hidden="true" />;
+}
