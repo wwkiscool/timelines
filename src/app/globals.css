@@ -443,3 +443,29 @@ kbd { font-family:var(--mono); }
   *,*::before,*::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
   .moment-card:hover,.capture-button:hover { transform:none; }
 }
+/* Account and cloud records */
+.account-controls { display: flex; align-items: center; gap: 12px; }
+.moment-form-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.account-name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #a6bbd6; font-size: 12px; }
+.account-controls .text-button { font-size: 12px; white-space: nowrap; }
+.cloud-banner { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 16px; padding: 14px 24px; background: #311d26; color: #ffd2d7; font-size: 13px; }
+.cloud-loading { padding: 9px 24px; background: #101e34; text-align: center; color: #a4c9e9; font-size: 12px; }
+.login-intro, .import-content p { color: #a6bbd6; line-height: 1.8; font-size: 14px; }
+.login-code-row { display: flex; align-items: center; gap: 16px; }
+.login-code-row input { min-width: 0; flex: 1; }
+.login-code-row button { flex-shrink: 0; font-size: 13px; }
+.mock-code { padding: 12px; border: 1px solid #716137; border-radius: 8px; background: #29241a; color: #e9d79f; line-height: 1.7; font-size: 12px; }
+.mock-code strong { font-family: monospace; font-size: 18px; letter-spacing: 2px; }
+.cloud-error { color: #ffafbd; font-size: 13px; line-height: 1.7; }
+.detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin: 20px 0; padding-top: 16px; border-top: 1px solid #26364d; font-size: 13px; }
+.text-button.danger-button { color: #ffafbd; }
+.legacy-import { margin: 16px auto 0; }
+button:disabled { cursor: wait; opacity: .55; }
+@media (max-width: 1000px) { .header-right .system-status, .header-right .header-divider { display: none; } }
+@media (max-width: 640px) {
+  .site-header { flex-wrap: wrap; row-gap: 12px; }
+  .site-header .header-right { display: flex; }
+  .account-name { max-width: 130px; font-size: 11px; }
+  .account-controls { gap: 8px; }
+  .login-code-row { gap: 10px; }
+}

@@ -8,17 +8,18 @@ const TAU = Math.PI * 2;
 const FORWARD_SPEED = 52;
 const PATH_RADIUS = 5200;
 export const SOLAR_HISTORY_SECONDS = 72;
-export const DEFAULT_SOLAR_CAMERA: Readonly<SolarCamera> = { yaw: -1.15, pitch: -.12, roll: .53, distance: 6000 };
+export const DEFAULT_SOLAR_CAMERA: Readonly<SolarCamera> = { yaw: -.58, pitch: .2, roll: .53, distance: 6000 };
 export const SOLAR_CAMERA_LIMITS = { yaw: { min: -1.48, max: -.58 }, pitch: { min: -.36, max: .2 }, roll: { min: .38, max: .74 }, distance: { min: 5200, max: 7600 } } as const;
 export const SOLAR_BODY_SCALE = 2.65;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const rgba = (hex: string, alpha: number) => `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${clamp(alpha, 0, 1)})`;
-// This normal is perpendicular to the flight axis and the default camera's
-// depth direction. The arc bends visibly in the image without spiralling away.
-const curveNormalLength = Math.hypot(Math.sin(DEFAULT_SOLAR_CAMERA.pitch), Math.cos(DEFAULT_SOLAR_CAMERA.pitch) * Math.sin(DEFAULT_SOLAR_CAMERA.yaw));
+// The flight path has its own reference orientation. Changing the initial
+// viewing angle must not reshape the existing arc or planetary trajectories.
+const PATH_ORIENTATION = { yaw: -1.15, pitch: -.12 };
+const curveNormalLength = Math.hypot(Math.sin(PATH_ORIENTATION.pitch), Math.cos(PATH_ORIENTATION.pitch) * Math.sin(PATH_ORIENTATION.yaw));
 const CURVE_NORMAL = {
-  x: -Math.sin(DEFAULT_SOLAR_CAMERA.pitch) / curveNormalLength,
-  y: Math.cos(DEFAULT_SOLAR_CAMERA.pitch) * Math.sin(DEFAULT_SOLAR_CAMERA.yaw) / curveNormalLength,
+  x: -Math.sin(PATH_ORIENTATION.pitch) / curveNormalLength,
+  y: Math.cos(PATH_ORIENTATION.pitch) * Math.sin(PATH_ORIENTATION.yaw) / curveNormalLength,
 };
 
 export const solarPlanets: readonly Planet[] = [
@@ -133,19 +134,16 @@ export function createSolarProjection(width: number, height: number, options: Pa
     }
   }
   const compact = width < 640;
-  // Keep the bodies near the middle of the page, with their history spreading
-  // diagonally down-left. Fit around this anchor instead of centring the long
-  // trail's bounding box, which would push the Sun towards the right edge.
-  const centerX = width * .53;
-  const centerY = height * .38;
-  const padding = compact ? 18 : 30;
+  // Use the largest uniform scale that fits the complete trajectory envelope.
+  // Shift the Sun only as far as needed to fit; keep the camera angles and the
+  // scale independent of animation time so playback never rotates or zooms.
+  const padding = Math.min(compact ? 18 : 24, width / 4, height / 4);
   const focal = Math.min(
-    (centerX - padding) / -minX,
-    (width - padding - centerX) / maxX,
-    (centerY - padding) / -minY,
-    (height - padding - centerY) / maxY,
-    2400,
+    (width - padding * 2) / (maxX - minX),
+    (height - padding * 2) / (maxY - minY),
   );
+  const centerX = clamp(width * .53, padding - minX * focal, width - padding - maxX * focal);
+  const centerY = clamp(height * .38, padding - minY * focal, height - padding - maxY * focal);
   const project = (point: Point): Projection => {
     const transformed = transform(point);
     const scale = focal / Math.max(1000, transformed.depth);

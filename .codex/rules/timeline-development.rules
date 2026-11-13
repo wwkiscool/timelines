@@ -1,0 +1,49 @@
+# User-authorized development commands for D:\mySpace\timelines.
+# These are command-prefix rules, so matching commands may accept extra arguments.
+# Use the explicit --prefix path when running these npm scripts.
+
+prefix_rule(
+    pattern = [
+        ["npm", "npm.cmd", "D:\\nvm\\nodejs\\npm.cmd"],
+        "--prefix",
+        "D:\\mySpace\\timelines",
+        "run",
+        ["typecheck", "build"],
+    ],
+    decision = "allow",
+    justification = "The user authorized type checking and building this timeline project without repeated approval.",
+    match = [
+        "npm --prefix 'D:\\mySpace\\timelines' run typecheck",
+        "npm.cmd --prefix 'D:\\mySpace\\timelines' run build",
+    ],
+    not_match = [
+        "npm --prefix 'D:\\mySpace\\nextjs' run build",
+        "npm --prefix 'D:\\mySpace\\timelines' run start",
+        "npm --prefix 'D:\\mySpace\\timelines' install",
+        "npm run build",
+    ],
+)
+
+prefix_rule(
+    pattern = [
+        ["npm", "npm.cmd", "D:\\nvm\\nodejs\\npm.cmd"],
+        "--prefix",
+        "D:\\mySpace\\timelines",
+        "run",
+        "dev",
+        "--",
+        "--hostname",
+        "127.0.0.1",
+    ],
+    decision = "allow",
+    justification = "The user authorized starting the timeline development server on the local computer without repeated approval.",
+    match = [
+        "npm --prefix 'D:\\mySpace\\timelines' run dev -- --hostname 127.0.0.1",
+        "npm.cmd --prefix 'D:\\mySpace\\timelines' run dev -- --hostname 127.0.0.1 --port 3002",
+    ],
+    not_match = [
+        "npm --prefix 'D:\\mySpace\\timelines' run dev",
+        "npm --prefix 'D:\\mySpace\\timelines' run dev -- --hostname 0.0.0.0",
+        "npm --prefix 'D:\\mySpace\\nextjs' run dev -- --hostname 127.0.0.1",
+    ],
+)

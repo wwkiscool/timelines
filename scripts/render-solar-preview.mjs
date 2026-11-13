@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -85,12 +86,11 @@ const curveChecks = [];
 for (const [width, height] of sizes) {
   const project = createSolarProjection(width, height);
   const sun = project(solarSunPosition(0));
-  near(sun.x, width * .53, "Default Sun horizontal anchor");
-  near(sun.y, height * .38, "Default Sun vertical anchor");
+  within(sun, solarSunRadius(sun, width < 640), width, height, "Default Sun");
   const history = project(solarSunPosition(0, SOLAR_HISTORY_SECONDS));
   const nearHead = project(solarSunPosition(0, .1));
   const angle = Math.atan2(nearHead.y - sun.y, sun.x - nearHead.x) * 180 / Math.PI;
-  assert.ok(angle >= 25 && angle <= 45, `Default flight must visibly rise at 25–45 degrees; got ${angle}`);
+  assert.ok(angle >= 10 && angle <= 20, `Default flight must retain the reference view's shallow rising tangent; got ${angle}`);
   flightAngle = angle;
   let previous = sun, maxBow = 0, maxTangentDeviation = 0;
   const chordX = history.x - sun.x, chordY = history.y - sun.y, chordLength = Math.hypot(chordX, chordY);
@@ -98,7 +98,7 @@ for (const [width, height] of sizes) {
   for (const age of historyAges.slice(1)) {
     const point = project(solarSunPosition(0, age));
     finite(point, "Projected common curved path");
-    assert.ok(point.x < previous.x && point.y > previous.y, "Curved history must continue down-left without hooks");
+    assert.ok(point.x < sun.x && point.y > previous.y, "History must stay left of the Sun and recede smoothly downward");
     const x = point.x - sun.x, y = point.y - sun.y;
     maxBow = Math.max(maxBow, Math.abs(chordX * y - chordY * x) / chordLength);
     maxTangentDeviation = Math.max(maxTangentDeviation, Math.abs(tangentX * y - tangentY * x) / tangentLength);
@@ -109,8 +109,8 @@ for (const [width, height] of sizes) {
     chordAngle: Math.atan2(chordY, -chordX) * 180 / Math.PI, maxBow, maxTangentDeviation });
 }
 
-// Include the CSS scene offsets in the position check, so canvas centring alone
-// cannot hide a scene that has slipped below the first viewport.
+// Include the CSS scene offsets: maximizing the trajectory must still leave
+// the Sun and its glow between the clock above and playback controls below.
 const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");
 const sceneOffsets = [...css.matchAll(/\.solar-experience\.is-immersive\s+\.scene-wrap\s*\{\s*top:\s*(\d+)px;\s*bottom:\s*(\d+)px;\s*\}/g)]
   .map(match => ({ top: Number(match[1]), bottom: Number(match[2]) }));
@@ -130,13 +130,22 @@ for (const [name, width, canvasHeight] of previewSizes) {
   const sun = createSolarProjection(width, canvasHeight)(solarSunPosition(0));
   const pageSun = { x: sun.x, y: headerHeight + scene.top + sun.y };
   const offset = { x: pageSun.x - width / 2, y: pageSun.y - viewportHeight / 2 };
-  assert.ok(Math.hypot(offset.x, offset.y) <= 50, `${name} Sun is more than 50px from the first viewport centre`);
+  const glow = solarSunRadius(sun, mobile) * 4.55;
+  assert.ok(pageSun.y - glow >= headerHeight + scene.top, `${name} Sun glow overlaps the clock area`);
+  assert.ok(pageSun.y + glow <= headerHeight + heroHeight - scene.bottom, `${name} Sun glow overlaps playback controls`);
   viewportComposition.push({ name, viewport: { width, height: viewportHeight }, canvas: { width, height: canvasHeight },
     sun: pageSun, centreOffset: offset, distanceFromCentre: Math.hypot(offset.x, offset.y) });
 }
 for (const [width, height] of sizes) for (const camera of cameras) {
   const project = createSolarProjection(width, height, camera.value);
   const anchor = project(solarSunPosition(0));
+  const larger = createSolarProjection(width * 2, height * 2, camera.value);
+  const baseline = project(solarPosition(solarPlanets.at(-1), 12));
+  const resized = larger(solarPosition(solarPlanets.at(-1), 12));
+  const resizedAnchor = larger(solarSunPosition(0));
+  near(Math.atan2(baseline.y - anchor.y, baseline.x - anchor.x),
+    Math.atan2(resized.y - resizedAnchor.y, resized.x - resizedAnchor.x), "Resizing changed the viewing angle");
+  assert.ok(resizedAnchor.scale > anchor.scale * 1.9, "Large viewports are still limited by a fixed zoom cap");
   for (const seconds of phases) {
     assert.deepEqual(project(solarSunPosition(seconds)), anchor, "Camera-following Sun drifted");
     within(anchor, solarSunRadius(anchor, width < 640), width, height, `${camera.name} Sun`);
@@ -246,7 +255,14 @@ for (const [name, width, height] of previewSizes) {
   });
   bodyVisibility.push({ name, sunRadius: +sunRadius.toFixed(1), planets });
 }
-const result = { planets: solarPlanets.length, sizes: sizes.length, cameras: cameras.length, phases: phases.length,
+const sha256 = value => createHash("sha256").update(value).digest("hex");
+const result = { generatedAt: new Date().toISOString(), passed: true,
+  sourceHashes: {
+    "src/lib/solar-system.ts": sha256(source),
+    "src/app/globals.css": sha256(css),
+    "scripts/render-solar-preview.mjs": sha256(await readFile(fileURLToPath(import.meta.url), "utf8")),
+  },
+  planets: solarPlanets.length, sizes: sizes.length, cameras: cameras.length, phases: phases.length,
   bodyChecks, trailChecks, historySeconds: SOLAR_HISTORY_SECONDS, defaultCamera: DEFAULT_SOLAR_CAMERA,
   flightAngle, curveChecks, viewportComposition, output, postersUpdated: values["write-posters"], bodyVisibility, animation };
 await writeFile(path.join(output, "validation.json"), JSON.stringify(result, null, 2) + "\n");
