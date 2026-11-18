@@ -55,6 +55,14 @@ for (const method of ['GET', 'PUT', 'DELETE']) await call(client, '/api/timeline
 const results = await call(client, '/api/timeline/moments?page=1&size=200&q=' + encodeURIComponent('  API  ') + '&category=personal', a.token);
 assert.equal(results.total, 1);
 assert.equal(results.list[0].id, moment.id);
+const ascResults = await call(client, '/api/timeline/moments?page=1&size=200&sort=asc&from=' + (input.timestamp - 1000) + '&to=' + (input.timestamp + 1000), a.token);
+assert.equal(ascResults.total, 1);
+await call(client, '/api/timeline/moments?sort=bad', a.token, 'GET', undefined, 400);
+await call(client, '/api/timeline/moments?from=200&to=100', a.token, 'GET', undefined, 400);
+const insights = await call(client, '/api/timeline/moments/insights', a.token);
+assert.equal(insights.total, 1);
+assert.equal(insights.categoryCounts.personal, 1);
+assert.ok(insights.activeDays >= 1);
 await call(client, '/api/timeline/moments?q=' + 'a'.repeat(241), a.token, 'GET', undefined, 400);
 
 const defaults = await call(client, '/api/timeline/preferences', a.token);

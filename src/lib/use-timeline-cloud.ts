@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MomentEntry } from "./time";
-import { TOKEN_KEY, TimelineApiError, timelineRequest, type LoginResult, type MomentPage, type Preferences, type TimelineUser } from "./timeline-api";
+import { TOKEN_KEY, TimelineApiError, timelineRequest, type LoginResult, type MomentInsights, type MomentPage, type Preferences, type TimelineUser } from "./timeline-api";
 
-export default function useTimelineCloud(query: string) {
+export default function useTimelineCloud(query: string, sort: "desc" | "asc" = "desc") {
   const [user, setUser] = useState<TimelineUser | null>(null);
   const [entries, setEntries] = useState<MomentEntry[]>([]);
+  const [insights, setInsights] = useState<MomentInsights | null>(null);
   const [total, setTotalState] = useState(0);
   const [preferences, setPreferences] = useState<Preferences | null>(null);
   const [restoring, setRestoring] = useState(true);
@@ -30,7 +31,7 @@ export default function useTimelineCloud(query: string) {
     requestSequence.current += 1;
     token.current = null;
     try { localStorage.removeItem(TOKEN_KEY); } catch { /* In-memory logout still succeeds. */ }
-    setUser(null); setEntries([]); setTotal(0); setPreferences(null);
+    setUser(null); setEntries([]); setInsights(null); setTotal(0); setPreferences(null);
     setLoading(false); setRestoring(false); setError(""); setPreferencesError("");
   }, []);
 
@@ -57,7 +58,7 @@ export default function useTimelineCloud(query: string) {
     const generation = ++epoch.current;
     setSessionId(generation);
     token.current = credential;
-    setEntries([]); setTotal(0); setUser(null); setPreferences(null); setRestoring(true); setError(""); setPreferencesError("");
+    setEntries([]); setInsights(null); setTotal(0); setUser(null); setPreferences(null); setRestoring(true); setError(""); setPreferencesError("");
     let authenticated = false;
     try {
       const account = await timelineRequest<TimelineUser>("/me", credential);
@@ -107,10 +108,14 @@ export default function useTimelineCloud(query: string) {
     setLoading(true); setError("");
     const timer = setTimeout(async () => {
       try {
-        const page = await request<MomentPage>(`/moments?page=1&size=200&q=${encodeURIComponent(query)}`, { signal: controller.signal });
+        const [page, loadedInsights] = await Promise.all([
+          request<MomentPage>(`/moments?page=1&size=200&sort=${sort}&q=${encodeURIComponent(query)}`, { signal: controller.signal }),
+          query ? Promise.resolve(null) : request<MomentInsights>("/moments/insights", { signal: controller.signal }).catch(() => null),
+        ]);
         if (sequence !== requestSequence.current) return;
         setEntries(page.list);
         if (!query) setTotal(page.total);
+        if (loadedInsights) setInsights(loadedInsights);
       } catch (cause) {
         if (controller.signal.aborted || sequence !== requestSequence.current || (cause instanceof Error && cause.name === "AbortError")) return;
         setEntries([]);
@@ -120,7 +125,7 @@ export default function useTimelineCloud(query: string) {
       }
     }, query ? 250 : 0);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [query, user, revision, request]);
+  }, [query, sort, user, revision, request]);
 
   const login = async (phone: string, code: string) => {
     const generation = ++epoch.current;
@@ -146,5 +151,5 @@ export default function useTimelineCloud(query: string) {
     else refresh();
   }, [initialize, refresh]);
 
-  return { user, entries, total, preferences, restoring, loading, error: error || preferencesError, request, login, logout, refresh, retry, setTotal };
+  return { user, entries, insights, total, preferences, restoring, loading, error: error || preferencesError, request, login, logout, refresh, retry, setTotal };
 }

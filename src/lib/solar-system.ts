@@ -4,6 +4,16 @@ export type SolarCamera = { yaw: number; pitch: number; roll: number; distance: 
 type Planet = { id: string; name: string; orbit: number; radius: number; color: string; period: number; angle: number; tilt: number; node: number };
 type Stroke = { kind: "stroke"; depth: number; a: Projection; b: Projection; color: string; alpha: number; width: number };
 type Body = { kind: "body"; depth: number; point: Projection; radius: number; planet?: Planet };
+export type SolarMomentCategory = "personal" | "milestone" | "system";
+export type SolarMomentInput = { id: string; title: string; timestamp: number; category: SolarMomentCategory; demo: boolean };
+export type SolarMomentMarker = SolarMomentInput & { x: number; y: number; radius: number; depth: number };
+export type SolarRenderExtras = {
+  ephemerisTimestamp?: number;
+  moments?: SolarMomentInput[];
+  referenceTimestamp?: number;
+  activeMomentId?: string | null;
+  hoveredMomentId?: string | null;
+};
 const TAU = Math.PI * 2;
 const FORWARD_SPEED = 52;
 const PATH_RADIUS = 5200;
@@ -62,8 +72,36 @@ function bendOrbit(point: Point, frame: ReturnType<typeof historyFrame>): Point 
   };
 }
 
-export function solarOrbitPosition(planet: Planet, seconds: number): Point {
-  const angle = planet.angle + seconds * TAU / planet.period;
+const J2000_MS = Date.UTC(2000, 0, 1, 12, 0, 0);
+const DAY_MS = 86_400_000;
+const EPHEMERIS_ELEMENTS: Record<string, { lon0Deg: number; periodDays: number }> = {
+  mercury: { lon0Deg: 252.25, periodDays: 87.969 },
+  venus: { lon0Deg: 181.98, periodDays: 224.701 },
+  earth: { lon0Deg: 100.46, periodDays: 365.256 },
+  mars: { lon0Deg: 355.45, periodDays: 686.980 },
+  jupiter: { lon0Deg: 34.40, periodDays: 4332.589 },
+  saturn: { lon0Deg: 49.94, periodDays: 10759.22 },
+  uranus: { lon0Deg: 313.23, periodDays: 30685.4 },
+  neptune: { lon0Deg: 304.88, periodDays: 60189.0 },
+  pluto: { lon0Deg: 238.93, periodDays: 90560.0 },
+};
+
+const MOMENT_COLORS: Record<SolarMomentCategory, string> = {
+  personal: "#70d9ff",
+  milestone: "#b8a5ff",
+  system: "#ffcf79",
+};
+
+export function resolvePlanetAngleOffset(planet: Planet, ephemerisTimestamp?: number): number {
+  if (ephemerisTimestamp === undefined || !Number.isFinite(ephemerisTimestamp)) return planet.angle;
+  const elem = EPHEMERIS_ELEMENTS[planet.id];
+  if (!elem) return planet.angle;
+  const daysSinceJ2000 = (ephemerisTimestamp - J2000_MS) / DAY_MS;
+  return ((elem.lon0Deg / 180) * Math.PI) + (daysSinceJ2000 / elem.periodDays) * TAU;
+}
+
+export function solarOrbitPosition(planet: Planet, seconds: number, angleOverride?: number): Point {
+  const angle = (angleOverride ?? planet.angle) + seconds * TAU / planet.period;
   const along = Math.cos(angle - planet.node) * planet.orbit;
   const across = Math.sin(angle - planet.node) * planet.orbit;
   return {
@@ -73,10 +111,55 @@ export function solarOrbitPosition(planet: Planet, seconds: number): Point {
   };
 }
 
-export function solarPosition(planet: Planet, seconds: number, age = 0): Point {
+export function solarPosition(planet: Planet, seconds: number, age = 0, angleOverride?: number): Point {
   const frame = historyFrame(age);
-  const local = bendOrbit(solarOrbitPosition(planet, seconds - age), frame), sun = frame.center;
+  const local = bendOrbit(solarOrbitPosition(planet, seconds - age, angleOverride), frame), sun = frame.center;
   return { x: local.x + sun.x, y: local.y + sun.y, z: local.z + sun.z };
+}
+
+function momentAgeOnArc(timestamp: number, referenceTimestamp: number, index: number, total: number): number {
+  const diffSeconds = Math.max(0, (referenceTimestamp - timestamp) / 1000);
+  // Map moments across the visible 72s solar arc with a logarithmic compression
+  // so both recent seconds and older days remain spread cleanly along the route.
+  if (diffSeconds <= 60) {
+    return clamp(2 + (diffSeconds / 60) * 16, 2, SOLAR_HISTORY_SECONDS - 4);
+  }
+  const logRatio = clamp(Math.log10(diffSeconds / 60) / 4.5, 0, 1);
+  const jitter = total > 1 ? ((index % 5) - 2) * 1.1 : 0;
+  return clamp(18 + logRatio * (SOLAR_HISTORY_SECONDS - 24) + jitter, 2.5, SOLAR_HISTORY_SECONDS - 3);
+}
+
+export function projectSolarMomentMarkers(
+  width: number,
+  height: number,
+  moments: readonly SolarMomentInput[],
+  referenceTimestamp: number,
+  options: Partial<SolarCamera> = {},
+): SolarMomentMarker[] {
+  if (!moments.length) return [];
+  const project = createSolarProjection(width, height, options);
+  const compact = width < 640;
+  const visible = moments.slice(0, 24);
+  return visible.map((item, index) => {
+    const age = momentAgeOnArc(item.timestamp, referenceTimestamp, index, visible.length);
+    const base = solarSunPosition(0, age);
+    const offsetAngle = (index * 2.39996) % TAU;
+    const radial = 32 + (index % 3) * 16;
+    const world = {
+      x: base.x + Math.cos(offsetAngle) * radial,
+      y: base.y + Math.sin(offsetAngle) * radial * 0.65,
+      z: base.z,
+    };
+    const projected = project(world);
+    const radius = compact ? 3.5 : 4.2;
+    return {
+      ...item,
+      x: projected.x,
+      y: projected.y,
+      radius,
+      depth: projected.depth,
+    };
+  });
 }
 
 function cameraTransform(view: SolarCamera) {
@@ -227,7 +310,7 @@ function drawSun(ctx: CanvasRenderingContext2D, point: Projection, radius: numbe
   circle(ctx, point.x, point.y, radius); ctx.fillStyle = sphere; ctx.fill();
 }
 
-export function drawSolarSystem(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, flash = -1, options: Partial<SolarCamera> = {}) {
+export function drawSolarSystem(ctx: CanvasRenderingContext2D, width: number, height: number, seconds: number, flash = -1, options: Partial<SolarCamera> = {}, extras?: SolarRenderExtras) {
   ctx.save();
   ctx.clearRect(0, 0, width, height);
   ctx.lineCap = "round";
@@ -245,13 +328,14 @@ export function drawSolarSystem(ctx: CanvasRenderingContext2D, width: number, he
   };
   for (let index = 0; index < solarPlanets.length; index++) {
     const planet = solarPlanets[index];
+    const angleOverride = resolvePlanetAngleOffset(planet, extras?.ephemerisTimestamp);
     const historySteps = Math.ceil(clamp(SOLAR_HISTORY_SECONDS / planet.period * 40, compact ? 40 : 56, compact ? 72 : 104));
     for (let i = 0; i < historySteps; i++) {
       const age = i / historySteps * SOLAR_HISTORY_SECONDS, nextAge = (i + 1) / historySteps * SOLAR_HISTORY_SECONDS;
       const fade = Math.pow(1 - age / SOLAR_HISTORY_SECONDS, .95);
-      addLine(solarPosition(planet, seconds, age), solarPosition(planet, seconds, nextAge), planet.color, fade * (planet.id === "earth" ? .62 : .49), compact ? .9 : 1.2);
+      addLine(solarPosition(planet, seconds, age, angleOverride), solarPosition(planet, seconds, nextAge, angleOverride), planet.color, fade * (planet.id === "earth" ? .62 : .49), compact ? .9 : 1.2);
     }
-    const world = solarPosition(planet, seconds), point = project(world);
+    const world = solarPosition(planet, seconds, 0, angleOverride), point = project(world);
     drawing.push({ kind: "body", depth: point.depth, point, radius: solarBodyRadius(planet, point, compact), planet });
     if (planet.id === "earth") {
       const angle = seconds * TAU / 3 + 1.9;
@@ -274,6 +358,33 @@ export function drawSolarSystem(ctx: CanvasRenderingContext2D, width: number, he
     else drawSun(ctx, sun, item.radius, seconds);
   }
   if (!compact) drawPlanetLabels(ctx, drawing.filter((item): item is Body => item.kind === "body"), width, height);
+  if (extras?.moments?.length) {
+    const refTime = extras.referenceTimestamp ?? Date.now();
+    const markers = projectSolarMomentMarkers(width, height, extras.moments, refTime, view);
+    for (const marker of markers) {
+      const color = MOMENT_COLORS[marker.category];
+      const active = marker.id === extras.activeMomentId || marker.id === extras.hoveredMomentId;
+      const haloRadius = marker.radius * (active ? 4.4 : 2.9);
+      const halo = ctx.createRadialGradient(marker.x, marker.y, 0, marker.x, marker.y, haloRadius);
+      halo.addColorStop(0, rgba(color, active ? 0.92 : 0.55));
+      halo.addColorStop(0.45, rgba(color, active ? 0.35 : 0.16));
+      halo.addColorStop(1, rgba(color, 0));
+      circle(ctx, marker.x, marker.y, haloRadius);
+      ctx.fillStyle = halo;
+      ctx.fill();
+
+      circle(ctx, marker.x, marker.y, active ? marker.radius * 1.15 : marker.radius * 0.72);
+      ctx.fillStyle = active ? "#ffffff" : rgba(color, marker.demo ? 0.65 : 0.95);
+      ctx.fill();
+
+      if (active) {
+        circle(ctx, marker.x, marker.y, marker.radius * 2.1);
+        ctx.strokeStyle = rgba(color, 0.8);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
   if (flash >= 0) {
     const progress = clamp(flash / 1.6, 0, 1);
     circle(ctx, sun.x, sun.y, (40 + progress * 850) * sun.scale);

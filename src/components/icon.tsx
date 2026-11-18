@@ -1,6 +1,10 @@
 import type { CSSProperties } from "react";
 
-export type IconName = "pause" | "play" | "plus" | "arrow" | "close" | "clock" | "expand" | "shrink" | "layers" | "bookmark" | "check" | "sun" | "spark" | "chevron" | "download" | "trash" | "focus";
+export type IconName =
+  | "pause" | "play" | "plus" | "arrow" | "close" | "clock" | "expand" | "shrink"
+  | "layers" | "bookmark" | "check" | "sun" | "spark" | "chevron" | "download"
+  | "trash" | "focus" | "volume" | "mute" | "timer" | "upload" | "image"
+  | "orbit" | "list" | "grid" | "compass" | "calendar";
 
 const paths: Record<IconName, React.ReactNode> = {
   pause: <><path d="M8 5v14M16 5v14" strokeWidth="3" /></>,
@@ -20,6 +24,16 @@ const paths: Record<IconName, React.ReactNode> = {
   download: <path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" />,
   trash: <><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></>,
   focus: <><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></>,
+  volume: <><path d="M11 5 6 9H3v6h3l5 4Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/></>,
+  mute: <><path d="M11 5 6 9H3v6h3l5 4Z"/><path d="m22 9-6 6m0-6 6 6"/></>,
+  timer: <><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9.5 2h5M12 2v3"/></>,
+  upload: <path d="M12 15V3m-5 5 5-5 5 5M4 16v5h16v-5" />,
+  image: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 16-5-5L5 20"/></>,
+  orbit: <><circle cx="12" cy="12" r="2.5"/><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(-24 12 12)"/></>,
+  list: <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />,
+  grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
+  compass: <><circle cx="12" cy="12" r="9"/><path d="m16 8-2.5 5.5L8 16l2.5-5.5Z"/></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></>,
 };
 
 export default function Icon({ name, size = 18, style, className }: { name: IconName; size?: number; style?: CSSProperties; className?: string }) {

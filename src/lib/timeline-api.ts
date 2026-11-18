@@ -6,6 +6,15 @@ export type MomentInput = Pick<MomentEntry, "title" | "note" | "timestamp" | "ca
 export type MomentPage = { list: MomentEntry[]; total: number; page: number; size: number };
 export type LoginResult = { token: string; expiresAt: number; user: TimelineUser };
 export type MomentExport = { version: number; timezone: string; moments: MomentEntry[] };
+export type MomentInsights = {
+  total: number;
+  categoryCounts: { personal: number; milestone: number; system: number };
+  activeDays: number;
+  earliestTimestamp: number | null;
+  latestTimestamp: number | null;
+  onThisDay: MomentEntry[];
+  highlight: MomentEntry | null;
+};
 export const TOKEN_KEY = "moment.timeline.token.v1";
 
 export class TimelineApiError extends Error {

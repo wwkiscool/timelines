@@ -24,4 +24,70 @@
 }
 
 .canvas[data-dragging="true"] { cursor: grabbing; }
+.canvas[data-hover="true"] { cursor: pointer; }
 .canvas:focus-visible { outline: 1px solid #70d9ff80; outline-offset: -8px; }
+
+.markerTooltip {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, calc(-100% - 12px));
+  padding: 7px 11px;
+  border: 1px solid #70d9ff4d;
+  border-radius: 6px;
+  background: #071122eb;
+  backdrop-filter: blur(10px);
+  color: #dff0ff;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 240px;
+  box-shadow: 0 8px 24px #00000080;
+}
+
+.markerTooltipTitle {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: #e3efff;
+}
+
+.markerTooltipMeta {
+  display: block;
+  margin-top: 3px;
+  font-family: Consolas, monospace;
+  font-size: 9px;
+  color: #70d9ff;
+}
+
+.zoomHud {
+  position: absolute;
+  right: 22px;
+  bottom: 14px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid #70d9ff26;
+  border-radius: 6px;
+  background: #060e1db8;
+  backdrop-filter: blur(10px);
+}
+
+.zoomHud button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 4px;
+  color: #8ea6cf;
+  font: 11px Consolas, monospace;
+}
+
+.zoomHud button:hover {
+  color: #70d9ff;
+  background: #70d9ff14;
+}
+
+@media (max-width: 640px) {
+  .zoomHud { right: 12px; bottom: 8px; }
+}

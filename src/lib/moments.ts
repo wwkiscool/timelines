@@ -85,3 +85,67 @@ export function createMomentId(): string {
   fallbackSequence += 1;
   return `moment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${fallbackSequence.toString(36)}`;
 }
+
+export type ParsedImportResult = {
+  moments: MomentEntry[];
+  skippedDemo: number;
+  skippedInvalid: number;
+};
+
+export function parseImportedMomentsFile(raw: string): ParsedImportResult | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  let items: unknown[] | null = null;
+  if (Array.isArray(parsed)) {
+    items = parsed;
+  } else if (parsed && typeof parsed === "object" && Array.isArray((parsed as { moments?: unknown }).moments)) {
+    items = (parsed as { moments: unknown[] }).moments;
+  }
+  if (!items) return null;
+
+  const valid: MomentEntry[] = [];
+  const seenIds = new Set<string>();
+  let skippedDemo = 0;
+  let skippedInvalid = 0;
+
+  for (const rawItem of items) {
+    if (!rawItem || typeof rawItem !== "object") {
+      skippedInvalid += 1;
+      continue;
+    }
+    const item = rawItem as Partial<MomentEntry>;
+    if (item.demo === true) {
+      skippedDemo += 1;
+      continue;
+    }
+    const title = typeof item.title === "string" ? item.title.trim().slice(0, 40) : "";
+    const note = typeof item.note === "string" ? item.note.slice(0, 240) : "";
+    const timestamp = typeof item.timestamp === "number" ? item.timestamp : Number.NaN;
+    const category = item.category;
+    if (
+      !title ||
+      !Number.isFinite(timestamp) ||
+      Math.abs(timestamp) >= MAX_TIMESTAMP ||
+      (category !== "personal" && category !== "milestone" && category !== "system")
+    ) {
+      skippedInvalid += 1;
+      continue;
+    }
+    const id = typeof item.id === "string" && item.id.trim().length > 0 && item.id.trim().length <= 128
+      ? item.id.trim()
+      : createMomentId();
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    valid.push({ id, title, note, timestamp, category, demo: false });
+  }
+
+  return {
+    moments: valid.sort((a, b) => b.timestamp - a.timestamp).slice(0, MAX_SAVED_MOMENTS),
+    skippedDemo,
+    skippedInvalid,
+  };
+}

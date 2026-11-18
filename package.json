@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "node --test scripts/check-timeline-request.mjs"
+    "test": "node --test scripts/check-timeline-request.mjs scripts/check-features.mjs"
   },
   "dependencies": {
     "next": "^16.0.0",
